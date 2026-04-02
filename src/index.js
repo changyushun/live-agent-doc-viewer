@@ -89,26 +89,61 @@ const statusBadge = (status) => {
 app.get('/', async (c) => {
   const entries = await ghDir(BASE)
   const projects = []
-  for (const e of entries.filter(e => e.type === 'dir').sort((a,b) => a.name.localeCompare(b.name))) {
+  for (const e of entries.filter(e => e.type === 'dir')) {
     const metaRaw = await ghFile(`${BASE}/${e.name}/meta.json`)
     if (!metaRaw) continue
     try { projects.push({ slug: e.name, ...JSON.parse(metaRaw) }) } catch {}
   }
+  // newest first
+  projects.sort((a, b) => (b.created ?? '').localeCompare(a.created ?? ''))
+
+  const filterTabs = [
+    ['all', '全部'],
+    ['in-review', '審核中'],
+    ['revised', '已修訂'],
+    ['approved', '已通過'],
+  ].map(([val, label]) =>
+    `<button onclick="filter('${val}')" data-f="${val}"
+      class="filter-btn px-3 py-1 rounded-full text-sm border transition">${label}</button>`
+  ).join('')
 
   const cards = projects.length
     ? projects.map(p => `
-        <a href="/project/${p.slug}" class="block bg-white rounded-xl border border-gray-200 p-4 hover:border-blue-400 hover:shadow-sm transition">
+        <a href="/project/${p.slug}" data-status="${p.status ?? ''}"
+          class="project-card block bg-white rounded-xl border border-gray-200 p-4 hover:border-blue-400 hover:shadow-sm transition">
           <div class="flex items-start justify-between gap-2 mb-1">
             <span class="font-semibold text-gray-900">${p.name ?? p.slug}</span>
             ${statusBadge(p.status)}
           </div>
           <div class="text-xs text-gray-400">${p.created ?? ''}</div>
         </a>`).join('')
-    : '<p class="text-gray-400 text-sm">workspace/projects/ 下尚無專案。</p>'
+    : '<p class="text-gray-400 text-sm" id="empty">workspace/projects/ 下尚無專案。</p>'
 
   return c.html(shell('Projects', null, `
-    <h1 class="text-xl font-bold mb-5">專案列表</h1>
-    <div class="flex flex-col gap-3">${cards}</div>
+    <h1 class="text-xl font-bold mb-4">專案列表</h1>
+    <div class="flex gap-2 flex-wrap mb-4">${filterTabs}</div>
+    <div class="flex flex-col gap-3" id="list">${cards}</div>
+    <p class="text-gray-400 text-sm hidden" id="no-match">此狀態下沒有專案。</p>
+    <script>
+      let current = 'all'
+      function filter(val) {
+        current = val
+        document.querySelectorAll('.filter-btn').forEach(b => {
+          const active = b.dataset.f === val
+          b.className = 'filter-btn px-3 py-1 rounded-full text-sm border transition ' +
+            (active ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400')
+        })
+        const cards = document.querySelectorAll('.project-card')
+        let visible = 0
+        cards.forEach(c => {
+          const show = val === 'all' || c.dataset.status === val
+          c.style.display = show ? '' : 'none'
+          if (show) visible++
+        })
+        document.getElementById('no-match').classList.toggle('hidden', visible > 0)
+      }
+      filter('all')
+    </script>
   `))
 })
 
