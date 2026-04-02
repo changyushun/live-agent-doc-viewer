@@ -21,6 +21,7 @@
   "homepage": "https://github.com/changyushun/agent-doc-viewer#readme",
   "dependencies": {
     "@hono/node-server": "^1.19.12",
-    "hono": "^4.12.9"
+    "hono": "^4.12.9",
+    "marked": "^17.0.5"
   }
 }
