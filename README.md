@@ -2,7 +2,7 @@
 
 A lightweight viewer for AI agent work outputs. Multiple agents (developer, reviewer, or any role you define) write markdown documents into `workspace/`, push to GitHub, and results appear instantly — no redeploy needed.
 
-**Live demo:** https://live-agent-doc-viewer-production.up.railway.app
+**Live demo:** https://live-agent-doc-viewer-production.up.railway.app/
 
 ---
 
