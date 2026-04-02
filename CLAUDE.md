@@ -45,17 +45,6 @@ agent 產出文件時用 `docs:` prefix。
 
 ## Agent 作業規範
 
-### 角色定義
-
-**Developer Agent**
-- 負責產出 `spec.md`：需求分析、設計決策、驗收標準
-- 每個決策要說明理由，不只寫「做什麼」，要寫「為什麼這樣做」
-
-**Reviewer Agent**
-- 負責產出 `reviews/round-{n}-{model}.md`：審查 spec 或 revision
-- 必須有明確結論：`Approved` / `Revise & Proceed` / `Reject`
-- 優點與問題分開列，問題標明是否擋 proceed
-
 ### workspace 目錄結構
 
 ```
