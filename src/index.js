@@ -1,16 +1,42 @@
 import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
 import { marked } from 'marked'
-import fs from 'fs/promises'
-import path from 'path'
-import { fileURLToPath } from 'url'
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const WORKSPACE = path.resolve(__dirname, '../workspace/projects')
+const REPO   = process.env.GITHUB_REPO   || 'changyushun/agent-doc-viewer'
+const BRANCH = process.env.GITHUB_BRANCH || 'main'
+const TOKEN  = process.env.GITHUB_TOKEN  || ''
+const BASE   = `workspace/projects`
 
 const app = new Hono()
 
-// ── helpers ──────────────────────────────────────────────────────────────────
+// ── GitHub API helpers ────────────────────────────────────────────────────────
+
+const ghHeaders = () => ({
+  'Accept': 'application/vnd.github+json',
+  'X-GitHub-Api-Version': '2022-11-28',
+  ...(TOKEN ? { 'Authorization': `Bearer ${TOKEN}` } : {}),
+})
+
+async function ghContents(path) {
+  const url = `https://api.github.com/repos/${REPO}/contents/${path}?ref=${BRANCH}`
+  const res = await fetch(url, { headers: ghHeaders() })
+  if (!res.ok) return null
+  return res.json()
+}
+
+async function ghFile(path) {
+  const data = await ghContents(path)
+  if (!data || data.type !== 'file') return null
+  return Buffer.from(data.content, 'base64').toString('utf8')
+}
+
+async function ghDir(path) {
+  const data = await ghContents(path)
+  if (!Array.isArray(data)) return []
+  return data
+}
+
+// ── UI helpers ────────────────────────────────────────────────────────────────
 
 const shell = (title, back, body) => `<!DOCTYPE html>
 <html lang="zh-TW">
@@ -58,26 +84,15 @@ const statusBadge = (status) => {
   return `<span class="text-xs font-medium px-2 py-0.5 rounded-full ${cls}">${label}</span>`
 }
 
-async function safeReadFile(base, rel) {
-  const resolved = path.resolve(base, rel)
-  if (!resolved.startsWith(base)) return null  // path traversal guard
-  try { return await fs.readFile(resolved, 'utf8') } catch { return null }
-}
+// ── routes ────────────────────────────────────────────────────────────────────
 
-async function listFiles(dir) {
-  try { return await fs.readdir(dir) } catch { return [] }
-}
-
-// ── routes ───────────────────────────────────────────────────────────────────
-
-// Home: list all projects
 app.get('/', async (c) => {
-  const dirs = await listFiles(WORKSPACE)
+  const entries = await ghDir(BASE)
   const projects = []
-  for (const d of dirs.sort()) {
-    const metaRaw = await safeReadFile(WORKSPACE, `${d}/meta.json`)
+  for (const e of entries.filter(e => e.type === 'dir').sort((a,b) => a.name.localeCompare(b.name))) {
+    const metaRaw = await ghFile(`${BASE}/${e.name}/meta.json`)
     if (!metaRaw) continue
-    try { projects.push({ slug: d, ...JSON.parse(metaRaw) }) } catch {}
+    try { projects.push({ slug: e.name, ...JSON.parse(metaRaw) }) } catch {}
   }
 
   const cards = projects.length
@@ -97,35 +112,40 @@ app.get('/', async (c) => {
   `))
 })
 
-// Project page: list documents
 app.get('/project/:name', async (c) => {
   const slug = c.req.param('name')
-  const projectDir = path.resolve(WORKSPACE, slug)
-  if (!projectDir.startsWith(WORKSPACE)) return c.text('Not found', 404)
-
-  const metaRaw = await safeReadFile(WORKSPACE, `${slug}/meta.json`)
+  const metaRaw = await ghFile(`${BASE}/${slug}/meta.json`)
   if (!metaRaw) return c.text('Not found', 404)
   let meta = {}
   try { meta = JSON.parse(metaRaw) } catch {}
 
-  const docLink = (rel, label) =>
-    `<a href="/project/${slug}/doc/${rel}" class="flex items-center gap-2 px-3 py-2.5 rounded-lg hover:bg-gray-100 transition text-sm text-gray-800">
+  const docLink = (ghPath, label) => {
+    const rel = ghPath.replace(`${BASE}/${slug}/`, '')
+    return `<a href="/project/${slug}/doc/${rel}" class="flex items-center gap-2 px-3 py-2.5 rounded-lg hover:bg-gray-100 transition text-sm text-gray-800">
       <span class="text-gray-400">📄</span>${label}
     </a>`
+  }
 
-  const section = (title, files, folder) => {
+  const section = (title, files) => {
     if (!files.length) return ''
     return `<div class="mb-5">
       <div class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1 px-1">${title}</div>
       <div class="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
-        ${files.map(f => docLink(folder ? `${folder}/${f}` : f, f)).join('')}
+        ${files.map(f => docLink(f.path, f.name)).join('')}
       </div>
     </div>`
   }
 
-  const specExists = (await safeReadFile(WORKSPACE, `${slug}/spec.md`)) !== null
-  const reviews = (await listFiles(path.join(projectDir, 'reviews'))).filter(f => f.endsWith('.md')).sort()
-  const revisions = (await listFiles(path.join(projectDir, 'revisions'))).filter(f => f.endsWith('.md')).sort()
+  const allEntries = await ghDir(`${BASE}/${slug}`)
+  const specFile   = allEntries.filter(e => e.type === 'file' && e.name === 'spec.md')
+  const subDirs    = allEntries.filter(e => e.type === 'dir')
+
+  const subSections = await Promise.all(
+    subDirs.sort((a,b) => a.name.localeCompare(b.name)).map(async dir => {
+      const files = (await ghDir(dir.path)).filter(e => e.type === 'file' && e.name.endsWith('.md')).sort((a,b) => a.name.localeCompare(b.name))
+      return section(dir.name, files)
+    })
+  )
 
   return c.html(shell(meta.name ?? slug, '/', `
     <div class="mb-5">
@@ -136,24 +156,19 @@ app.get('/project/:name', async (c) => {
         ${meta.models ? `<span>· ${meta.models.join(', ')}</span>` : ''}
       </div>
     </div>
-    ${specExists ? section('Spec', ['spec.md'], null) : ''}
-    ${section('Reviews', reviews, 'reviews')}
-    ${section('Revisions', revisions, 'revisions')}
+    ${section('Spec', specFile)}
+    ${subSections.join('')}
   `))
 })
 
-// Doc page: render markdown
 app.get('/project/:name/doc/*', async (c) => {
   const slug = c.req.param('name')
-  const rel = c.req.path.replace(`/project/${slug}/doc/`, '')
-  const projectDir = path.resolve(WORKSPACE, slug)
-  if (!projectDir.startsWith(WORKSPACE)) return c.text('Not found', 404)
-
-  const content = await safeReadFile(projectDir, rel)
-  if (content === null) return c.text('Not found', 404)
+  const rel  = c.req.path.replace(`/project/${slug}/doc/`, '')
+  const content = await ghFile(`${BASE}/${slug}/${rel}`)
+  if (!content) return c.text('Not found', 404)
 
   const html = marked.parse(content)
-  const filename = path.basename(rel)
+  const filename = rel.split('/').pop()
 
   return c.html(shell(filename, `/project/${slug}`, `
     <article class="prose bg-white rounded-xl border border-gray-200 px-5 py-6">${html}</article>
