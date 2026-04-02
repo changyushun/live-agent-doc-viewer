@@ -2,7 +2,7 @@ import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
 import { marked } from 'marked'
 
-const REPO   = process.env.GITHUB_REPO   || 'changyushun/agent-doc-viewer'
+const REPO   = process.env.GITHUB_REPO   || ''
 const BRANCH = process.env.GITHUB_BRANCH || 'main'
 const TOKEN  = process.env.GITHUB_TOKEN  || ''
 const BASE   = `workspace/projects`

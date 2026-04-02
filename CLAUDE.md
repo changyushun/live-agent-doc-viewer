@@ -21,7 +21,7 @@ Server 每次請求時從 GitHub API 即時拉取 `workspace/` 內容，**不讀
 | 變數 | 用途 |
 |---|---|
 | `GITHUB_TOKEN` | GitHub personal access token（repo read 權限） |
-| `GITHUB_REPO` | `owner/repo`，預設 `changyushun/agent-doc-viewer` |
+| `GITHUB_REPO` | `owner/repo`，例如 `your-username/your-repo` |
 | `GITHUB_BRANCH` | 讀取的分支，預設 `main` |
 | `PORT` | server port，Railway 自動注入 |
 
